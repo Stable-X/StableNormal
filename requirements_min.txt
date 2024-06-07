@@ -1,0 +1,17 @@
+gradio>=4.32.1
+gradio-imageslider>=0.0.20
+pygltflib==1.16.1
+trimesh==4.0.5
+imageio
+imageio-ffmpeg
+Pillow
+einops==0.7.0
+
+spaces
+accelerate
+diffusers>=0.28.0
+matplotlib==3.8.2
+scipy==1.11.4
+torch==2.0.1
+transformers==4.36.1
+xformers==0.0.21
