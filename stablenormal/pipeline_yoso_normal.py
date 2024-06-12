@@ -181,7 +181,6 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         self.prompt_embeds = None
         self.empty_text_embedding = empty_text_embedding
         self.t_start= t_start # target_out latents
-        self.gauss_latent = None
 
     def check_inputs(
         self,
@@ -522,7 +521,6 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
             return_dict=False,
         )
 
-
         # 7. YOSO sampling
         latent_x_t = self.unet(
             gauss_latent,
@@ -587,11 +585,7 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         )  # [N,4,h,w]
         image_latent = image_latent * self.vae.config.scaling_factor
         image_latent = image_latent.repeat_interleave(ensemble_size, dim=0)  # [N*E,4,h,w]
-
-        pred_latent = self.gauss_latent
-        if pred_latent is None:
-            self.gauss_latent = torch.randn_like(image_latent)
-            pred_latent = self.gauss_latent
+        pred_latent = torch.randn_like(image_latent)
 
         return image_latent, pred_latent
 
