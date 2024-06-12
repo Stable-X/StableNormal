@@ -99,7 +99,90 @@ class StableNormalOutput(BaseOutput):
 
     prediction: Union[np.ndarray, torch.Tensor]
     latent: Union[None, torch.Tensor]
+    gaus_noise: Union[None, torch.Tensor]
 
+from einops import rearrange  
+class DINOv2_Encoder(torch.nn.Module):
+    IMAGENET_DEFAULT_MEAN = [0.485, 0.456, 0.406]
+    IMAGENET_DEFAULT_STD = [0.229, 0.224, 0.225]
+
+    def __init__(
+        self,
+        model_name = 'dinov2_vitl14',
+        freeze = True,
+        antialias=True,
+        device="cuda",
+        size = 448,
+    ):
+        super(DINOv2_Encoder, self).__init__()
+        
+        self.model = torch.hub.load('facebookresearch/dinov2', model_name)
+        self.model.eval().to(device)
+        self.device = device
+        self.antialias = antialias
+        self.dtype = torch.float32
+
+        self.mean = torch.Tensor(self.IMAGENET_DEFAULT_MEAN)
+        self.std = torch.Tensor(self.IMAGENET_DEFAULT_STD)
+        self.size = size
+        if freeze:
+            self.freeze()
+
+
+    def freeze(self):
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+    @torch.no_grad()
+    def encoder(self, x):
+        '''
+        x: [b h w c], range from (-1, 1), rbg
+        '''
+
+        x = self.preprocess(x).to(self.device, self.dtype)
+
+        b, c, h, w = x.shape
+        patch_h, patch_w = h // 14, w // 14
+
+        embeddings = self.model.forward_features(x)['x_norm_patchtokens']
+        embeddings = rearrange(embeddings, 'b (h w) c -> b h w c', h = patch_h, w = patch_w)
+
+        return  rearrange(embeddings, 'b h w c -> b c h w')
+
+    def preprocess(self, x):
+        ''' x
+        '''
+        # normalize to [0,1],
+        x = torch.nn.functional.interpolate(
+            x,
+            size=(self.size, self.size),
+            mode='bicubic',
+            align_corners=True,
+            antialias=self.antialias,
+        )
+
+        x = (x + 1.0) / 2.0
+        # renormalize according to dino
+        mean = self.mean.view(1, 3, 1, 1).to(x.device)
+        std = self.std.view(1, 3, 1, 1).to(x.device)
+        x = (x - mean) / std
+
+        return x
+    
+    def to(self, device, dtype=None):
+        if dtype is not None:
+            self.dtype = dtype
+            self.model.to(device, dtype)
+            self.mean.to(device, dtype)
+            self.std.to(device, dtype)
+        else:
+            self.model.to(device)
+            self.mean.to(device)
+            self.std.to(device)
+        return self
+
+    def __call__(self, x, **kwargs):
+        return self.encoder(x, **kwargs)
 
 class StableNormalPipeline(StableDiffusionControlNetPipeline):
     """ Pipeline for monocular normals estimation using the Marigold method: https://marigoldmonodepth.github.io.
@@ -163,7 +246,6 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         default_processing_resolution: Optional[int] = 768,
         prompt="The normal map",
         empty_text_embedding=None,
-        t_start: Optional[int] = 401,
     ):
         super().__init__(
             vae,
@@ -190,8 +272,7 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         self.prompt = prompt
         self.prompt_embeds = None
         self.empty_text_embedding = empty_text_embedding
-        self.t_start= torch.tensor(t_start) # target_out latents
-
+        self.prior = DINOv2_Encoder(size=672)
 
     def check_inputs(
         self,
@@ -346,7 +427,6 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         num_inference_steps: Optional[int] = None,
         ensemble_size: int = 1,
         processing_resolution: Optional[int] = None,
-        return_intermediate_result: bool = False,
         match_input_resolution: bool = True,
         resample_method_input: str = "bilinear",
         resample_method_output: str = "bilinear",
@@ -441,10 +521,14 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
             image, processing_resolution, resample_method_input, device, dtype
         )  # [N,3,PPH,PPW]
 
+        image_latent, gaus_noise = self.prepare_latents(
+            image, latents, generator, ensemble_size, batch_size
+        )  # [N,4,h,w], [N,4,h,w]
+
         # 0. X_start latent obtain
-        predictor = self.x_start_pipeline(image, skip_preprocess=True)
+        predictor = self.x_start_pipeline(image, latents=gaus_noise, 
+                                          processing_resolution=processing_resolution, skip_preprocess=True)
         x_start_latent = predictor.latent
-        gauss_latent = predictor.gauss_latent
 
         # 1. Check inputs.
         num_images = self.check_inputs(
@@ -503,28 +587,14 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         dino_features = self.dino_controlnet.dino_controlnet_cond_embedding(dino_features)
         dino_features = self.match_noisy(dino_features, x_start_latent)
 
-        # 6. Encode input image into latent space. At this step, each of the `N` input images is represented with `E`
-        # ensemble members. Each ensemble member is an independent diffused prediction, just initialized independently.
-        # Latents of each such predictions across all input images and all ensemble members are represented in the
-        # `pred_latent` variable. The variable `image_latent` is of the same shape: it contains each input image encoded
-        # into latent space and replicated `E` times. The latents can be either generated (see `generator` to ensure
-        # reproducibility), or passed explicitly via the `latents` argument. The latter can be set outside the pipeline
-        # code. For example, in the Marigold-LCM video processing demo, the latents initialization of a frame is taken
-        # as a convex combination of the latents output of the pipeline for the previous frame and a newly-sampled
-        # noise. This behavior can be achieved by setting the `output_latent` argument to `True`. The latent space
-        # dimensions are `(h, w)`. Encoding into latent space happens in batches of size `batch_size`.
-        # Model invocation: self.vae.encoder.
-        image_latent, pred_latent = self.prepare_latents(
-            image, latents, generator, ensemble_size, batch_size
-        )  # [N*E,4,h,w], [N*E,4,h,w]
-
-
         del (
                 image,
         )
 
         # 7. denoise sampling, using heuritic sampling proposed by Ye.
-        self.scheduler.set_timesteps(num_inference_steps, device=device)
+
+        t_start = self.x_start_pipeline.t_start
+        self.scheduler.set_timesteps(num_inference_steps, t_start=t_start,device=device)
 
         cond_scale =controlnet_conditioning_scale
         pred_latent = x_start_latent
@@ -544,50 +614,58 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
 
         pred_latents = []
 
-        down_block_res_samples, mid_block_res_sample = self.controlnet(
-            image_latent.detach(),
-            self.t_start,
-            encoder_hidden_states=self.prompt_embeds,
-            conditioning_scale=cond_scale,
-            guess_mode=False,
-            return_dict=False,
-        )
         last_pred_latent = pred_latent
-        for i in range(4):
+        for (t, prev_t) in self.progress_bar(zip(self.scheduler.timesteps,self.scheduler.prev_timesteps), leave=False, desc="Diffusion steps..."):
+
             _dino_down_block_res_samples = [dino_down_block_res_sample for dino_down_block_res_sample in dino_down_block_res_samples]  # copy, avoid repeat quiery
-            
-            model_output = self.dino_unet_forward(
+
+            # controlnet
+            down_block_res_samples, mid_block_res_sample = self.controlnet(
+                image_latent.detach(),
+                t,
+                encoder_hidden_states=self.prompt_embeds,
+                conditioning_scale=cond_scale,
+                guess_mode=False,
+                return_dict=False,
+            )
+
+            # SG-DRN
+            noise = self.dino_unet_forward(
                 self.unet,
                 pred_latent,
-                self.t_start,
+                t,
                 encoder_hidden_states=self.prompt_embeds,
                 down_block_additional_residuals=down_block_res_samples,
                 mid_block_additional_residual=mid_block_res_sample,
                 dino_down_block_additional_residuals= _dino_down_block_res_samples,
                 return_dict=False,
             )[0]  # [B,4,h,w]
-            pred_latents.append(model_output)
-            pred_latent = self.scheduler.add_noise(model_output, gauss_latent, self.t_start)
-            pred_latent = 0.4 * pred_latent + 0.6 * last_pred_latent
-            last_pred_latent = pred_latent
-        pred_latents = torch.cat(pred_latents, dim=0)
+
+            pred_latents.append(noise)
+            # ddim steps
+            out = self.scheduler.step(
+                noise, t, prev_t, pred_latent, gaus_noise = gaus_noise, generator=generator, cur_step=cur_step+1  # NOTE that cur_step dirs to next_step
+            )# [B,4,h,w]
+            pred_latent = out.prev_sample
+
+            cur_step += 1
+
         del (
             image_latent,
             dino_features,
         )
-
+        pred_latent = pred_latents[-1]  # using x0
 
         # decoder
-        if return_intermediate_result:
-            prediction = []
-            for _pred_latent in pred_latents:
-                _prediction = self.decode_prediction(_pred_latent.unsqueeze(dim=0))
-                prediction.append(_prediction)
-            prediction = torch.cat(prediction, dim=0)
-        else:
-            prediction = self.decode_prediction(pred_latents[-1].unsqueeze(dim=0))
+        prediction = self.decode_prediction(pred_latent)
         prediction = self.image_processor.unpad_image(prediction, padding)  # [N*E,3,PH,PW]
-        
+        prediction = self.image_processor.resize_antialias(prediction, original_resolution, resample_method_output, is_aa=False)  # [N,3,H,W]
+
+        if match_input_resolution:
+            prediction = self.image_processor.resize_antialias(
+                prediction, original_resolution, resample_method_output, is_aa=False
+            )  # [N,3,H,W]
+
         if match_input_resolution:
             prediction = self.image_processor.resize_antialias(
                 prediction, original_resolution, resample_method_output, is_aa=False
@@ -604,6 +682,7 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         return StableNormalOutput(
             prediction=prediction,
             latent=pred_latent,
+            gaus_noise=gaus_noise
         )
 
     # Copied from diffusers.pipelines.marigold.pipeline_marigold_depth.MarigoldDepthPipeline.prepare_latents

@@ -93,7 +93,7 @@ class YosoNormalsOutput(BaseOutput):
 
     prediction: Union[np.ndarray, torch.Tensor]
     latent: Union[None, torch.Tensor]
-    gauss_latent: Union[None, torch.Tensor]
+    gaus_noise: Union[None, torch.Tensor]
 
 
 class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
@@ -502,10 +502,11 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         # noise. This behavior can be achieved by setting the `output_latent` argument to `True`. The latent space
         # dimensions are `(h, w)`. Encoding into latent space happens in batches of size `batch_size`.
         # Model invocation: self.vae.encoder.
-        image_latent, gauss_latent = self.prepare_latents(
+        image_latent, pred_latent = self.prepare_latents(
             image, latents, generator, ensemble_size, batch_size
         )  # [N*E,4,h,w], [N*E,4,h,w]
 
+        gaus_noise = pred_latent.detach().clone()
         del image
 
 
@@ -523,7 +524,7 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
 
         # 7. YOSO sampling
         latent_x_t = self.unet(
-            gauss_latent,
+            pred_latent,
             self.t_start,
             encoder_hidden_states=self.prompt_embeds,
             down_block_additional_residuals=down_block_res_samples,
@@ -533,6 +534,7 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
 
 
         del (
+            pred_latent,
             image_latent,
         )
 
@@ -554,7 +556,7 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         return YosoNormalsOutput(
             prediction=prediction,
             latent=latent_x_t,
-            gauss_latent=gauss_latent,
+            gaus_noise=gaus_noise,
         )
 
     # Copied from diffusers.pipelines.marigold.pipeline_marigold_depth.MarigoldDepthPipeline.prepare_latents
@@ -585,7 +587,15 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         )  # [N,4,h,w]
         image_latent = image_latent * self.vae.config.scaling_factor
         image_latent = image_latent.repeat_interleave(ensemble_size, dim=0)  # [N*E,4,h,w]
-        pred_latent = torch.randn_like(image_latent)
+
+        pred_latent = latents
+        if pred_latent is None:
+            pred_latent = randn_tensor(
+                image_latent.shape,
+                generator=generator,
+                device=image_latent.device,
+                dtype=image_latent.dtype,
+            )  # [N*E,4,h,w]
 
         return image_latent, pred_latent
 

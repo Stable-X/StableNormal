@@ -12,7 +12,7 @@ import pdb
 
 class HEURI_DDIMScheduler(DDIMScheduler, SchedulerMixin, ConfigMixin):
 
-    def set_timesteps(self, num_inference_steps: int, device: Union[str, torch.device] = None):
+    def set_timesteps(self, num_inference_steps: int, t_start: int, device: Union[str, torch.device] = None):
             """
             Sets the discrete timesteps used for the diffusion chain (to be run before inference).
 
@@ -56,7 +56,12 @@ class HEURI_DDIMScheduler(DDIMScheduler, SchedulerMixin, ConfigMixin):
                 )
 
             timesteps = torch.from_numpy(timesteps).to(device)
+
+
             naive_sampling_step = num_inference_steps //2
+
+            # TODO for debug
+            # naive_sampling_step = 0
 
             self.naive_sampling_step = naive_sampling_step
 
@@ -79,8 +84,8 @@ class HEURI_DDIMScheduler(DDIMScheduler, SchedulerMixin, ConfigMixin):
             use_clipped_model_output: bool = False,
             generator=None,
             cur_step=None,
-            gauss_latent=None,
             variance_noise: Optional[torch.Tensor] = None,
+            gaus_noise: Optional[torch.Tensor] = None,
             return_dict: bool = True,
         ) -> Union[DDIMSchedulerOutput, Tuple]:
             """
@@ -134,9 +139,11 @@ class HEURI_DDIMScheduler(DDIMScheduler, SchedulerMixin, ConfigMixin):
             # - pred_prev_sample -> "x_t-1"
 
             # 1. get previous step value (=t-1)
+
             # trick from heuri_sampling
             if cur_step == self.naive_sampling_step  and timestep == prev_timestep:
                 timestep += self.gap
+
 
             prev_timestep = prev_timestep  # NOTE naive sampling
 
@@ -172,6 +179,7 @@ class HEURI_DDIMScheduler(DDIMScheduler, SchedulerMixin, ConfigMixin):
             variance = self._get_variance(timestep, prev_timestep)
             std_dev_t = eta * variance ** (0.5)
 
+
             if use_clipped_model_output:
                 # the pred_epsilon is always re-derived from the clipped x_0 in Glide
                 pred_epsilon = (sample - alpha_prod_t ** (0.5) * pred_original_sample) / beta_prod_t ** (0.5)
@@ -180,8 +188,6 @@ class HEURI_DDIMScheduler(DDIMScheduler, SchedulerMixin, ConfigMixin):
             pred_sample_direction = (1 - alpha_prod_t_prev - std_dev_t**2) ** (0.5) * pred_epsilon
 
             # 7. compute x_t without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-            if gauss_latent == None:
-                gauss_latent = torch.randn_like(pred_original_sample)
             prev_sample = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
 
             if eta > 0:
@@ -200,10 +206,11 @@ class HEURI_DDIMScheduler(DDIMScheduler, SchedulerMixin, ConfigMixin):
                 prev_sample = prev_sample + variance
 
             if cur_step < self.naive_sampling_step:
-                prev_sample = self.add_noise(pred_original_sample, gauss_latent, timestep)
+                prev_sample = self.add_noise(pred_original_sample, torch.randn_like(pred_original_sample), timestep)
 
             if not return_dict:
                 return (prev_sample,)
+
 
             return DDIMSchedulerOutput(prev_sample=prev_sample, pred_original_sample=pred_original_sample)
 

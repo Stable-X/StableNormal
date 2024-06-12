@@ -28,6 +28,7 @@ import imageio as imageio
 import numpy as np
 import spaces
 import torch as torch
+torch.backends.cuda.matmul.allow_tf32 = True
 from PIL import Image
 from gradio_imageslider import ImageSlider
 from tqdm import tqdm
@@ -55,7 +56,7 @@ default_image_processing_resolution = 768
 
 default_video_num_inference_steps = 10
 default_video_processing_resolution = 768
-default_video_out_max_frames = 450
+default_video_out_max_frames = 60
 
 def process_image_check(path_input):
     if path_input is None:
@@ -99,7 +100,6 @@ def process_image(
 
     path_output_dir = tempfile.mkdtemp()
     path_out_png = os.path.join(path_output_dir, f"{name_base}_normal_colored.png")
-    yield None
     input_image = Image.open(path_input)
     input_image = resize_image(input_image, default_image_processing_resolution)
 
@@ -132,7 +132,7 @@ def process_video(
     pipe,
     path_input,
     out_max_frames=default_video_out_max_frames,
-    target_fps=3,
+    target_fps=10,
     progress=gr.Progress(),
 ):
     if path_input is None:
@@ -146,6 +146,7 @@ def process_video(
     path_output_dir = tempfile.mkdtemp()
     path_out_vis = os.path.join(path_output_dir, f"{name_base}_normal_colored.mp4")
 
+    init_latents = None
     reader, writer = None, None
     try:
         reader = imageio.get_reader(path_input)
@@ -174,8 +175,11 @@ def process_video(
             pipe_out = pipe(
                 frame_pil,
                 match_input_resolution=False,
+                latents=init_latents
             )
 
+            if init_latents is None:
+                init_latents = pipe_out.gaus_noise
             processed_frame = pipe.image_processor.visualize_normals(  # noqa
                 pipe_out.prediction
             )[0]
@@ -333,7 +337,7 @@ def run_demo_server(pipe):
                     inputs=[video_input],
                     outputs=[processed_frames, video_output_files],
                     directory_name="examples_video",
-                    cache_examples=True,
+                    cache_examples=False,
                 )
                 
             with gr.Tab("Panorama"):
@@ -407,108 +411,22 @@ def run_demo_server(pipe):
             server_port=7860,
         )
 
-from einops import rearrange  
-class DINOv2_Encoder:
-    IMAGENET_DEFAULT_MEAN = [0.485, 0.456, 0.406]
-    IMAGENET_DEFAULT_STD = [0.229, 0.224, 0.225]
 
-    def __init__(
-        self,
-        model_name = 'dinov2_vitl14',
-        freeze = True,
-        antialias=True,
-        device="cuda",
-        size = 448,
-    ):
-
-        super(DINOv2_Encoder).__init__()
-
-        self.model = torch.hub.load('facebookresearch/dinov2', model_name)
-        self.model.eval()
-        self.device = device
-        self.antialias = antialias
-        self.dtype = torch.float32
-
-        self.mean = torch.Tensor(self.IMAGENET_DEFAULT_MEAN)
-        self.std = torch.Tensor(self.IMAGENET_DEFAULT_STD)
-        self.size = size
-        if freeze:
-            self.freeze()
-
-
-    def freeze(self):
-        for param in self.model.parameters():
-            param.requires_grad = False
-
-    @torch.no_grad()
-    def encoder(self, x):
-        '''
-        x: [b h w c], range from (-1, 1), rbg
-        '''
-
-        x = self.preprocess(x).to(self.device, self.dtype)
-
-        b, c, h, w = x.shape
-        patch_h, patch_w = h // 14, w // 14
-
-        embeddings = self.model.forward_features(x)['x_norm_patchtokens']
-        embeddings = rearrange(embeddings, 'b (h w) c -> b h w c', h = patch_h, w = patch_w)
-
-        return  rearrange(embeddings, 'b h w c -> b c h w')
-
-    def preprocess(self, x):
-        ''' x
-        '''
-        # normalize to [0,1],
-        x = torch.nn.functional.interpolate(
-            x,
-            size=(self.size, self.size),
-            mode='bicubic',
-            align_corners=True,
-            antialias=self.antialias,
-        )
-
-        x = (x + 1.0) / 2.0
-        # renormalize according to dino
-        mean = self.mean.view(1, 3, 1, 1).to(x.device)
-        std = self.std.view(1, 3, 1, 1).to(x.device)
-        x = (x - mean) / std
-
-        return x
-    
-    def to(self, device, dtype=None):
-        if dtype is not None:
-            self.dtype = dtype
-            self.model.to(device, dtype)
-            self.mean.to(device, dtype)
-            self.std.to(device, dtype)
-        else:
-            self.model.to(device)
-            self.mean.to(device)
-            self.std.to(device)
-        return self
-
-    def __call__(self, x, **kwargs):
-        return self.encoder(x, **kwargs)
-    
 def main():
     os.system("pip freeze")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     x_start_pipeline = YOSONormalsPipeline.from_pretrained(
-        'Stable-X/yoso-normal-v0-1', trust_remote_code=True,
-        t_start=300).to(device)
-    dinov2_prior = DINOv2_Encoder(size=672)
-    dinov2_prior.to(device)
-    
-    pipe = StableNormalPipeline.from_pretrained('Stable-X/stable-normal-v0-1', t_start=300, trust_remote_code=True,
+        'weights/yoso-normal-v0-2', trust_remote_code=True, variant="fp16", torch_dtype=torch.float16).to(device)
+    pipe = StableNormalPipeline.from_pretrained('weights/stable-normal-v0-1', trust_remote_code=True,
+                                                variant="fp16", torch_dtype=torch.float16,
                                                 scheduler=HEURI_DDIMScheduler(prediction_type='sample', 
                                                                               beta_start=0.00085, beta_end=0.0120, 
                                                                               beta_schedule = "scaled_linear"))
     pipe.x_start_pipeline = x_start_pipeline
-    pipe.prior = dinov2_prior
     pipe.to(device)
+    pipe.prior.to(device, torch.float16)
     
     try:
         import xformers
