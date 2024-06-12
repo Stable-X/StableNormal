@@ -418,8 +418,8 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     x_start_pipeline = YOSONormalsPipeline.from_pretrained(
-        'weights/yoso-normal-v0-2', trust_remote_code=True, variant="fp16", torch_dtype=torch.float16).to(device)
-    pipe = StableNormalPipeline.from_pretrained('weights/stable-normal-v0-1', trust_remote_code=True,
+        'Stable-X/yoso-normal-v0-2', trust_remote_code=True, variant="fp16", torch_dtype=torch.float16).to(device)
+    pipe = StableNormalPipeline.from_pretrained('Stable-X/stable-normal-v0-1', trust_remote_code=True,
                                                 variant="fp16", torch_dtype=torch.float16,
                                                 scheduler=HEURI_DDIMScheduler(prediction_type='sample', 
                                                                               beta_start=0.00085, beta_end=0.0120, 
