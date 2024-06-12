@@ -33,7 +33,7 @@ from gradio_imageslider import ImageSlider
 from tqdm import tqdm
 
 from pathlib import Path
-
+import cv2
 import gradio
 from gradio.utils import get_cache_folder
 from stablenormal.pipeline_yoso_normal import YOSONormalsPipeline
@@ -64,6 +64,19 @@ def process_image_check(path_input):
             "Missing image in the first pane: upload a file or use one from the gallery below."
         )
 
+def resize_image(input_image, resolution):
+    input_image = np.asarray(input_image)
+    H, W, C = input_image.shape
+    H = float(H)
+    W = float(W)
+    k = float(resolution) / min(H, W)
+    H *= k
+    W *= k
+    H = int(np.round(H / 64.0)) * 64
+    W = int(np.round(W / 64.0)) * 64
+    img = cv2.resize(input_image, (W, H), interpolation=cv2.INTER_LANCZOS4 if k > 1 else cv2.INTER_AREA)
+    return Image.fromarray(img)
+
 def process_image(
     pipe,
     path_input,
@@ -72,27 +85,20 @@ def process_image(
     print(f"Processing image {name_base}{name_ext}")
 
     path_output_dir = tempfile.mkdtemp()
-    # path_out_fp32 = os.path.join(path_output_dir, f"{name_base}_normal_fp32.npy")
     path_out_png = os.path.join(path_output_dir, f"{name_base}_normal_colored.png")
 
     input_image = Image.open(path_input)
-    # input_image = center_crop(input_image)
-    
+    input_image = resize_image(input_image, default_image_processing_resolution)
+
     pipe_out = pipe(
         input_image,
         match_input_resolution=False,
-        return_intermediate_result=False
+        processing_resolution=max(input_image.size)
     )
 
     normal_pred = pipe_out.prediction[0, :, :]
     normal_colored = pipe.image_processor.visualize_normals(pipe_out.prediction)
     normal_colored[-1].save(path_out_png)
-    print(path_out_png)
-    # np.save(path_out_fp32, normal_pred)
-    # path_out_vis = os.path.join(path_output_dir, f"{name_base}_normal_refinement_process.gif")
-    # normal_colored[0].save(path_out_vis, save_all=True, 
-    #                        append_images=normal_colored[1:], 
-                        #    duration=400, loop=0)
     return [input_image, path_out_png]
 
 def center_crop(img):
@@ -155,7 +161,6 @@ def process_video(
             pipe_out = pipe(
                 frame_pil,
                 match_input_resolution=False,
-                return_intermediate_result=False
             )
 
             processed_frame = pipe.image_processor.visualize_normals(  # noqa
@@ -275,7 +280,7 @@ def run_demo_server(pipe):
                     ]),
                     inputs=[image_input],
                     outputs=[image_output_slider],
-                    cache_examples=True,
+                    cache_examples=False,
                     directory_name="examples_image",
                 )
 
@@ -315,7 +320,7 @@ def run_demo_server(pipe):
                     inputs=[video_input],
                     outputs=[processed_frames, video_output_files],
                     directory_name="examples_video",
-                    cache_examples=True,
+                    cache_examples=False,
                 )
                 
             with gr.Tab("Panorama"):
@@ -477,18 +482,17 @@ def main():
     os.system("pip freeze")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     x_start_pipeline = YOSONormalsPipeline.from_pretrained(
-        'Stable-X/yoso-normal-v0-1', trust_remote_code=True,
+        'weights/yoso-normal-v0-1', trust_remote_code=True,
         t_start=300).to(device)
     dinov2_prior = DINOv2_Encoder(size=672)
     dinov2_prior.to(device)
     
-    pipe = StableNormalPipeline.from_pretrained('Stable-X/stable-normal-v0-1', t_start=300, trust_remote_code=True,
+    pipe = StableNormalPipeline.from_pretrained('weights/stable-normal-v0-1', t_start=300, trust_remote_code=True,
                                                 scheduler=HEURI_DDIMScheduler(prediction_type='sample', 
                                                                               beta_start=0.00085, beta_end=0.0120, 
                                                                               beta_schedule = "scaled_linear"))
-    # two stage concat
     pipe.x_start_pipeline = x_start_pipeline
     pipe.prior = dinov2_prior
     pipe.to(device)
