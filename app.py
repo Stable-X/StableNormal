@@ -33,7 +33,6 @@ from gradio_imageslider import ImageSlider
 from tqdm import tqdm
 
 from pathlib import Path
-import cv2
 import gradio
 from gradio.utils import get_cache_folder
 from stablenormal.pipeline_yoso_normal import YOSONormalsPipeline
