@@ -76,7 +76,7 @@ def process_image(
     path_out_png = os.path.join(path_output_dir, f"{name_base}_normal_colored.png")
 
     input_image = Image.open(path_input)
-    input_image = center_crop(input_image)
+    # input_image = center_crop(input_image)
     
     pipe_out = pipe(
         input_image,
