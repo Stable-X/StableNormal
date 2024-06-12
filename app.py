@@ -65,17 +65,31 @@ def process_image_check(path_input):
         )
 
 def resize_image(input_image, resolution):
-    input_image = np.asarray(input_image)
-    H, W, C = input_image.shape
+    # Ensure input_image is a PIL Image object
+    if not isinstance(input_image, Image.Image):
+        raise ValueError("input_image should be a PIL Image object")
+
+    # Convert image to numpy array
+    input_image_np = np.asarray(input_image)
+
+    # Get image dimensions
+    H, W, C = input_image_np.shape
     H = float(H)
     W = float(W)
+    
+    # Calculate the scaling factor
     k = float(resolution) / min(H, W)
+    
+    # Determine new dimensions
     H *= k
     W *= k
     H = int(np.round(H / 64.0)) * 64
     W = int(np.round(W / 64.0)) * 64
-    img = cv2.resize(input_image, (W, H), interpolation=cv2.INTER_LANCZOS4 if k > 1 else cv2.INTER_AREA)
-    return Image.fromarray(img)
+    
+    # Resize the image using PIL's resize method
+    img = input_image.resize((W, H), Image.LANCZOS if k > 1 else Image.ANTIALIAS)
+    
+    return img
 
 def process_image(
     pipe,
