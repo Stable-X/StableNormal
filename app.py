@@ -86,7 +86,7 @@ def resize_image(input_image, resolution):
     W = int(np.round(W / 64.0)) * 64
     
     # Resize the image using PIL's resize method
-    img = input_image.resize((W, H), Image.LANCZOS)
+    img = input_image.resize((W, H), Image.ANTIALIAS)
     
     return img
 
