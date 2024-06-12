@@ -293,7 +293,7 @@ def run_demo_server(pipe):
                     ]),
                     inputs=[image_input],
                     outputs=[image_output_slider],
-                    cache_examples=False,
+                    cache_examples=True,
                     directory_name="examples_image",
                 )
 
@@ -333,7 +333,7 @@ def run_demo_server(pipe):
                     inputs=[video_input],
                     outputs=[processed_frames, video_output_files],
                     directory_name="examples_video",
-                    cache_examples=False,
+                    cache_examples=True,
                 )
                 
             with gr.Tab("Panorama"):
