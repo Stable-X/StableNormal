@@ -86,7 +86,7 @@ def resize_image(input_image, resolution):
     W = int(np.round(W / 64.0)) * 64
     
     # Resize the image using PIL's resize method
-    img = input_image.resize((W, H), Image.LANCZOS if k > 1 else Image.ANTIALIAS)
+    img = input_image.resize((W, H), Image.LANCZOS)
     
     return img
 
@@ -99,7 +99,7 @@ def process_image(
 
     path_output_dir = tempfile.mkdtemp()
     path_out_png = os.path.join(path_output_dir, f"{name_base}_normal_colored.png")
-
+    yield None
     input_image = Image.open(path_input)
     input_image = resize_image(input_image, default_image_processing_resolution)
 
@@ -112,7 +112,7 @@ def process_image(
     normal_pred = pipe_out.prediction[0, :, :]
     normal_colored = pipe.image_processor.visualize_normals(pipe_out.prediction)
     normal_colored[-1].save(path_out_png)
-    return [input_image, path_out_png]
+    yield [input_image, path_out_png]
 
 def center_crop(img):
     # Open the image file
