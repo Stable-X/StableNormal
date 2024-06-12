@@ -182,7 +182,6 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
             dino_controlnet=dino_controlnet,
         )
 
-        self.vae_scale_factor = 768
         self.image_processor = MarigoldImageProcessor(vae_scale_factor=self.vae_scale_factor)
         self.dino_image_processor = lambda x: x / 127.5 -1.
 
