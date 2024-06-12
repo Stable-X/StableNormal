@@ -480,9 +480,9 @@ def main():
     
     x_start_pipeline = YOSONormalsPipeline.from_pretrained(
         'Stable-X/yoso-normal-v0-1', trust_remote_code=True,
-        t_start=300).to(device, torch.float16)
+        t_start=300).to(device)
     dinov2_prior = DINOv2_Encoder(size=672)
-    dinov2_prior.to(device, torch.float16)
+    dinov2_prior.to(device)
     
     pipe = StableNormalPipeline.from_pretrained('Stable-X/stable-normal-v0-1', t_start=300, trust_remote_code=True,
                                                 scheduler=HEURI_DDIMScheduler(prediction_type='sample', 
@@ -491,7 +491,7 @@ def main():
     # two stage concat
     pipe.x_start_pipeline = x_start_pipeline
     pipe.prior = dinov2_prior
-    pipe.to(device, torch.float16)
+    pipe.to(device)
     
     try:
         import xformers
