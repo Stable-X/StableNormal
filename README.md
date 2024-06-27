@@ -1,6 +1,6 @@
 # StableNormal: Reducing Diffusion Variance for Stable and Sharp Normal
 
-This repository represents the official implementation of the paper titled "Repurposing Diffusion-Based Image Generators for Monocular Depth Estimation".
+This repository represents the official implementation of the paper titled "StableNormal: Reducing Diffusion Variance for Stable and Sharp Normal".
 
 [![Website](https://raw.githubusercontent.com/prs-eth/Marigold/main/doc/badges/badge-website.svg)](https://stable-x.github.io/StableNormal)
 [![Paper](https://img.shields.io/badge/arXiv-PDF-b31b1b)](https://arxiv.org/abs/2406.16864)
