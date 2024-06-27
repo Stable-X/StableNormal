@@ -12,3 +12,18 @@ We propose StableNormal, which tailors the diffusion priors for monocular normal
 
 ![teaser](doc/StableNormal-Teaser.jpg)
 
+
+## Installation:
+
+Please run following commands to build package:
+```
+git clone https://github.com/Stable-X/StableNormal.git
+cd StableNormal
+pip install -r requirements.txt
+```
+or directly build package:
+```
+pip install git+https://github.com/Stable-X/StableNormal.git
+```
+
+
