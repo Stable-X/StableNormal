@@ -26,4 +26,36 @@ or directly build package:
 pip install git+https://github.com/Stable-X/StableNormal.git
 ```
 
+## Usage
+To use the StableNormal pipeline, you can instantiate the model and apply it to an image as follows:
 
+```python
+import torch
+from PIL import Image
+
+# Load an image
+input_image = Image.open("path/to/your/image.jpg")
+
+# Create predictor instance
+predictor = torch.hub.load("Stable-X/StableNormal", "StableNormal", trust_repo=True)
+
+# Apply the model to the image
+normal_image = predictor(input_image)
+
+# Save or display the result
+normal_image.save("output/normal_map.jpg")
+```
+
+**Additional Options:**
+
+- If you need faster inference(10 times faster), use `StableNormal_turbo`:
+
+```python
+predictor = torch.hub.load("Stable-X/StableNormal", "StableNormal_turbo", trust_repo=True)
+```
+
+- If Hugging Face is not available from terminal, you could download the pretrained weights to `weights` dir:
+
+```python
+predictor = torch.hub.load("Stable-X/StableNormal", "StableNormal", trust_repo=True, local_cache_dir='./weights')
+```
