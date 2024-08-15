@@ -1,10 +1,10 @@
-IMG=aliyunregistry.deepmirror.com.cn/dm/data-search-engine-dev:presubmit-0644e83e95eccdfd4604be9a787bcde0fcb2a776
+IMG=stable-normal-dev:py311_cu121
 REPO_NAME=StableNormal
 NAME=${USER}_${REPO_NAME}
 
 
 docker run -it -d --name $NAME \
-  --gpus all \
+  --gpus "device=1" \
   --hostname in_docker \
   --add-host in_docker:127.0.0.1 \
   --add-host $(hostname):127.0.0.1 \
