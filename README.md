@@ -43,7 +43,7 @@ predictor = torch.hub.load("Stable-X/StableNormal", "StableNormal", trust_repo=T
 normal_image = predictor(input_image)
 
 # Save or display the result
-normal_image.save("output/normal_map.jpg")
+normal_image.save("output/normal_map.png")
 ```
 
 **Additional Options:**
