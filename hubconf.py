@@ -7,7 +7,7 @@ from PIL import Image, ImageOps
 from torch.nn.functional import interpolate
 
 
-dependencies = ["torch", "numpy", "stablenormal", "diffusers", "PIL"]
+dependencies = ["torch", "numpy", "diffusers", "PIL"]
 
 from stablenormal.pipeline_yoso_normal import YOSONormalsPipeline
 from stablenormal.pipeline_stablenormal import StableNormalPipeline
