@@ -11,7 +11,7 @@ We propose StableNormal, which tailors the diffusion priors for monocular normal
 ![teaser](doc/StableNormal-Teaser.jpg)
 
 ## News
-## 🎉 New Release: StableDelight 🎉
+### 🎉 New Release: StableDelight 🎉
 We're excited to announce the release of StableDelight, our latest open-source project focusing on real-time reflection removal from textured surfaces. Check out the [StableDelight](https://github.com/Stable-X/StableDelight) for more details!
 ![image](https://github.com/user-attachments/assets/fb138d2a-3fb4-4b86-ba51-3a60b91c8caf)
 
