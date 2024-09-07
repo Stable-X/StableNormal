@@ -1,8 +1,6 @@
-This repository provides the official PyTorch implementation for the following paper:
-
-**StableNormal: Reducing Diffusion Variance for Stable and Sharp Normal**<br>
+# **StableNormal: Reducing Diffusion Variance for Stable and Sharp Normal**<br>
 [Chongjie Ye*](https://github.com/hugoycj), [Lingteng Qiu*](https://lingtengqiu.github.io/), [Xiaodong Gu](https://github.com/gxd1994), [Qi Zuo](https://github.com/hitsz-zuoqi), [Yushuang Wu](https://scholar.google.com/citations?hl=zh-TW&user=x5gpN0sAAAAJ), [Zilong Dong](https://scholar.google.com/citations?user=GHOQKCwAAAAJ), Liefeng Bo, [Yuliang Xiu#](https://xiuyuliang.cn/), [Xiaoguang Han#](https://gaplab.cuhk.edu.cn/)<br>
-SIGGRAPH Asia, 2024.<br>
+SIGGRAPH Asia, 2024 & TOG<br>
 
 \* Equal contribution<br>
 \# Corresponding Author
