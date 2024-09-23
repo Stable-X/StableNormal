@@ -74,6 +74,43 @@ predictor = torch.hub.load("Stable-X/StableNormal", "StableNormal_turbo", trust_
 predictor = torch.hub.load("Stable-X/StableNormal", "StableNormal", trust_repo=True, local_cache_dir='./weights')
 ```
 
+
+
+**Compute Metrics:**
+
+This section provides guidance on evaluating your normal predictor using the DIODE dataset.
+
+**Step 1**: Prepare Your Results Folder
+
+First, make sure you have generated a normal map and structured your results folder as shown below:
+
+
+```bash
+├── YOUR-FOLDER-NAME 
+│   ├── scan_00183_00019_00183_indoors_000_010_gt.png
+│   ├── scan_00183_00019_00183_indoors_000_010_init.png
+│   ├── scan_00183_00019_00183_indoors_000_010_ref.png
+│   ├── scan_00183_00019_00183_indoors_000_010_step0.png
+│   ├── scan_00183_00019_00183_indoors_000_010_step1.png
+│   ├── scan_00183_00019_00183_indoors_000_010_step2.png
+│   ├── scan_00183_00019_00183_indoors_000_010_step3.png
+```
+
+
+**Step 2**: Compute Metric Values
+
+Once your results folder is set up, you can compute the metrics for your normal predictions by running the following scripts:
+
+```bash
+# compute metrics
+python ./stablenormal/metrics/computer_metric.py -i ${YOUR-FOLDER-NAME}
+
+# compute variance
+python ./stablenormal/metrics/computer_variance.py -i ${YOUR-FOLDER-NAME}
+```
+
+Replace ${YOUR-FOLDER-NAME}; with the actual name of your results folder. Following these steps will allow you to effectively evaluate your normal predictor's performance on the DIODE dataset.
+
 ## Citation
 
 ```bibtex
