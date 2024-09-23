@@ -103,10 +103,10 @@ Once your results folder is set up, you can compute the metrics for your normal 
 
 ```bash
 # compute metrics
-python ./stablenormal/metrics/computer_metric.py -i ${YOUR-FOLDER-NAME}
+python ./stablenormal/metrics/compute_metric.py -i ${YOUR-FOLDER-NAME}
 
 # compute variance
-python ./stablenormal/metrics/computer_variance.py -i ${YOUR-FOLDER-NAME}
+python ./stablenormal/metrics/compute_variance.py -i ${YOUR-FOLDER-NAME}
 ```
 
 Replace ${YOUR-FOLDER-NAME}; with the actual name of your results folder. Following these steps will allow you to effectively evaluate your normal predictor's performance on the DIODE dataset.

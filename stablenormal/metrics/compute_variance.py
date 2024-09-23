@@ -8,6 +8,7 @@
 import argparse
 import csv
 import glob
+import multiprocessing
 import os
 import time
 from collections import defaultdict
@@ -15,12 +16,6 @@ from collections import defaultdict
 import cv2
 import numpy as np
 import torch
-
-DATASET = {
-    "DIODE": "NormalDiffusion_eval/DIODE",
-}
-
-import multiprocessing
 
 
 def dot(x, y):
@@ -143,8 +138,8 @@ def worker(gt_result, ref_image, cur_state_list, high_frequency=False):
         normal_pred = cv2.resize(normal_pred, (normal_gt.shape[1], normal_gt.shape[0]))
         normal_pred = normal_pred / 255 * 2 - 1
 
-        normal_pred_norm = np.linalg.norm(normal_pred, axis=-1)
-        normal_pred = tqlo.safe_normalize(normal_pred)
+        # normal_pred_norm = np.linalg.norm(normal_pred, axis=-1)
+        normal_pred = safe_normalize(normal_pred)
 
         # fg_mask_pred = (normal_pred_norm > 0.5) & (normal_pred_norm < 1.5)
         # fg_mask = fg_mask_gt & fg_mask_pred
