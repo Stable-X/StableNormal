@@ -26,7 +26,7 @@ We propose StableNormal, which tailors the diffusion priors for monocular normal
 ![teaser](doc/StableNormal-Teaser.png)
 
 ## News
-- StableNormal-turbo is now avaliable on [ModelScope]( https://modelscope.cn/studios/Damo_XR_Lab/StableNormal ) . We invite you to explore its features!  :fire::fire::fire: (10.11, 2024 UTC)
+- StableNormal-turbo (10 times faster) is now avaliable on [ModelScope]( https://modelscope.cn/studios/Damo_XR_Lab/StableNormal ) . We invite you to explore its features!  :fire::fire::fire: (10.11, 2024 UTC)
 - StableNormal is accepted by SIGGRAPH Asia 2024. (**Journal Track)**) (09.11, 2024 UTC)
 - Release [StableDelight](https://github.com/Stable-X/StableDelight) :fire::fire::fire: (09.07, 2024 UTC)
 - Release [StableNormal](https://github.com/Stable-X/StableNormal) :fire::fire::fire: (08.27, 2024 UTC)
