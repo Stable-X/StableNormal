@@ -9,7 +9,6 @@
 <h3 align="center">SIGGRAPH Asia 2024 (Journal Track)</h3>
 
 <div align="center">
-
 [![Website](https://raw.githubusercontent.com/prs-eth/Marigold/main/doc/badges/badge-website.svg)](https://stable-x.github.io/StableNormal)
 [![Paper](https://img.shields.io/badge/arXiv-PDF-b31b1b)](https://arxiv.org/abs/2406.16864)
 [![ModelScope](https://img.shields.io/badge/%20ModelScope%20-Space-blue)](https://modelscope.cn/studios/Damo_XR_Lab/StableNormal)
@@ -24,7 +23,13 @@ We propose StableNormal, which tailors the diffusion priors for monocular normal
 ![teaser](doc/StableNormal-Teaser.jpg)
 
 ## News
+- StableNormal **YOSO** is now avaliable on [ModelScope]( https://modelscope.cn/studios/Damo_XR_Lab/StableNormal ) . We invite you to explore its features!  :fire::fire::fire: (10.11, 2024 UTC)
+- StableNormal is got accepted by SIGGRAPH Asia 2024. (**Journal Track)**) (09.11, 2024 UTC)
+- Release StableDelight :fire::fire::fire: (09.07, 2024 UTC)
+- Release StableNormal :fire::fire::fire: (08.27, 2024 UTC)
+
 ### 🎉 New Release: StableDelight 🎉
+
 We're excited to announce the release of StableDelight, our latest open-source project focusing on real-time reflection removal from textured surfaces. Check out the [StableDelight](https://github.com/Stable-X/StableDelight) for more details!
 ![image](https://github.com/user-attachments/assets/fb138d2a-3fb4-4b86-ba51-3a60b91c8caf)
 
