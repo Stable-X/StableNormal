@@ -6,12 +6,14 @@
 [![Hugging Face Model](https://img.shields.io/badge/🤗%20Hugging%20Face%20-Model-green)](https://huggingface.co/Stable-X/stable-normal-v0-1)
 [![License](https://img.shields.io/badge/License-Apache--2.0-929292)](https://www.apache.org/licenses/LICENSE-2.0)
 
-
-
 We propose StableNormal, which tailors the diffusion priors for monocular normal estimation. Unlike prior diffusion-based works, we focus on enhancing estimation stability by reducing the inherent stochasticity of diffusion models ( i.e. , Stable Diffusion). This enables “Stable-and-Sharp” normal estimation, which outperforms multiple baselines (try [Compare](https://huggingface.co/spaces/Stable-X/normal-estimation-arena)), and improves various real-world applications (try [Demo](https://huggingface.co/spaces/Stable-X/StableNormal)). 
 
 ![teaser](doc/StableNormal-Teaser.jpg)
 
+## News
+### 🎉 New Release: StableDelight 🎉
+We're excited to announce the release of StableDelight, our latest open-source project focusing on real-time reflection removal from textured surfaces. Check out the [StableDelight](https://github.com/Stable-X/StableDelight) for more details!
+![image](https://github.com/user-attachments/assets/fb138d2a-3fb4-4b86-ba51-3a60b91c8caf)
 
 ## Installation:
 
