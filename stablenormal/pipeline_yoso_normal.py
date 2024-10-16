@@ -588,7 +588,7 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         image_latent = image_latent * self.vae.config.scaling_factor
         image_latent = image_latent.repeat_interleave(ensemble_size, dim=0)  # [N*E,4,h,w]
 
-        pred_latent = latents
+        pred_latent = torch.zeros_like(image_latent)
         if pred_latent is None:
             pred_latent = randn_tensor(
                 image_latent.shape,
