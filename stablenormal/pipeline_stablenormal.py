@@ -594,10 +594,13 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         # 7. denoise sampling, using heuritic sampling proposed by Ye.
 
         t_start = self.x_start_pipeline.t_start
-        self.scheduler.set_timesteps(num_inference_steps, t_start=t_start,device=device)
+        self.scheduler.set_timesteps(num_inference_steps,device=device)
 
         cond_scale =controlnet_conditioning_scale
-        pred_latent = x_start_latent
+        if t_start == 0:
+            pred_latent = self.scheduler.add_noise(x_start_latent, gaus_noise, self.scheduler.timesteps[0])
+        else:
+            pred_latent = x_start_latent
 
         cur_step = 0
 
@@ -615,6 +618,7 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         pred_latents = []
 
         last_pred_latent = pred_latent
+
         for (t, prev_t) in self.progress_bar(zip(self.scheduler.timesteps,self.scheduler.prev_timesteps), leave=False, desc="Diffusion steps..."):
 
             _dino_down_block_res_samples = [dino_down_block_res_sample for dino_down_block_res_sample in dino_down_block_res_samples]  # copy, avoid repeat quiery

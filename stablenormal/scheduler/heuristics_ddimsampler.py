@@ -12,7 +12,7 @@ import pdb
 
 class HEURI_DDIMScheduler(DDIMScheduler, SchedulerMixin, ConfigMixin):
 
-    def set_timesteps(self, num_inference_steps: int, t_start: int, device: Union[str, torch.device] = None):
+    def set_timesteps(self, num_inference_steps: int,  device: Union[str, torch.device] = None):
             """
             Sets the discrete timesteps used for the diffusion chain (to be run before inference).
 
@@ -59,10 +59,6 @@ class HEURI_DDIMScheduler(DDIMScheduler, SchedulerMixin, ConfigMixin):
 
 
             naive_sampling_step = num_inference_steps //2
-
-            # TODO for debug
-            # naive_sampling_step = 0
-
             self.naive_sampling_step = naive_sampling_step
 
             timesteps[:naive_sampling_step] = timesteps[naive_sampling_step] # refine on step 5 for 5 steps, then backward from step 6

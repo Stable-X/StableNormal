@@ -20,6 +20,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+from torchvision import transforms
+import cv2
 from PIL import Image
 from tqdm.auto import tqdm
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
@@ -144,20 +146,20 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
     def __init__(
         self,
         vae: AutoencoderKL,
-        text_encoder: CLIPTextModel,
-        tokenizer: CLIPTokenizer,
         unet: UNet2DConditionModel,
         controlnet: Union[ControlNetModel, List[ControlNetModel], Tuple[ControlNetModel]],
-        scheduler: Union[DDIMScheduler],
-        safety_checker: StableDiffusionSafetyChecker,
-        feature_extractor: CLIPImageProcessor,
+        scheduler: Union[DDIMScheduler] = None,
+        safety_checker: StableDiffusionSafetyChecker = None,
+        text_encoder: CLIPTextModel = None,
+        tokenizer: CLIPTokenizer = None,
+        feature_extractor: CLIPImageProcessor = None,
         image_encoder: CLIPVisionModelWithProjection = None,
         requires_safety_checker: bool = True,
         default_denoising_steps: Optional[int] = 1,
 		default_processing_resolution: Optional[int] = 768,
         prompt="",
         empty_text_embedding=None,
-        t_start: Optional[int] = 401,
+        t_start: Optional[int] = 0,
     ):
         super().__init__(
             vae,
@@ -177,8 +179,6 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         self.control_image_processor = MarigoldImageProcessor(vae_scale_factor=self.vae_scale_factor)
         self.default_denoising_steps = default_denoising_steps
         self.default_processing_resolution = default_processing_resolution
-        self.prompt = prompt
-        self.prompt_embeds = None
         self.empty_text_embedding = empty_text_embedding
         self.t_start= t_start # target_out latents
 
@@ -442,39 +442,7 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
             output_uncertainty,
         )
 
-
-        # 2. Prepare empty text conditioning.
-        # Model invocation: self.tokenizer, self.text_encoder.
-        if self.empty_text_embedding is None:
-            prompt = ""
-            text_inputs = self.tokenizer(
-                prompt,
-                padding="do_not_pad",
-                max_length=self.tokenizer.model_max_length,
-                truncation=True,
-                return_tensors="pt",
-            )
-            text_input_ids = text_inputs.input_ids.to(device)
-            self.empty_text_embedding = self.text_encoder(text_input_ids)[0]  # [1,2,1024]
-
-
-
-        # 3. prepare prompt
-        if self.prompt_embeds is None:
-            prompt_embeds, negative_prompt_embeds = self.encode_prompt(
-                self.prompt,
-                device,
-                num_images_per_prompt,
-                False,
-                negative_prompt,
-                prompt_embeds=prompt_embeds,
-                negative_prompt_embeds=None,
-                lora_scale=None,
-                clip_skip=None,
-            )
-            self.prompt_embeds = prompt_embeds
-            self.negative_prompt_embeds = negative_prompt_embeds
-
+        self.empty_text_embedding = torch.zeros(1, 257, 1024).to(device, dtype)
 
 
         # 4. Preprocess input images. This function loads input image or images of compatible dimensions `(H, W)`,
@@ -509,14 +477,13 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         gaus_noise = pred_latent.detach().clone()
         del image
 
-
         # 6. obtain control_output
 
         cond_scale =controlnet_conditioning_scale
         down_block_res_samples, mid_block_res_sample = self.controlnet(
             image_latent.detach(),
             self.t_start,
-            encoder_hidden_states=self.prompt_embeds,
+            encoder_hidden_states=self.empty_text_embedding,
             conditioning_scale=cond_scale,
             guess_mode=False,
             return_dict=False,
@@ -526,7 +493,7 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         latent_x_t = self.unet(
             pred_latent,
             self.t_start,
-            encoder_hidden_states=self.prompt_embeds,
+            encoder_hidden_states=self.empty_text_embedding,
             down_block_additional_residuals=down_block_res_samples,
             mid_block_additional_residual=mid_block_res_sample,
             return_dict=False,
@@ -576,8 +543,6 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
             else:
                 raise AttributeError("Could not access latents of provided encoder_output")
 
-
-
         image_latent = torch.cat(
             [
                 retrieve_latents(self.vae.encode(image[i : i + batch_size]))
@@ -587,16 +552,7 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         )  # [N,4,h,w]
         image_latent = image_latent * self.vae.config.scaling_factor
         image_latent = image_latent.repeat_interleave(ensemble_size, dim=0)  # [N*E,4,h,w]
-
-        pred_latent = torch.zeros_like(image_latent)
-        if pred_latent is None:
-            pred_latent = randn_tensor(
-                image_latent.shape,
-                generator=generator,
-                device=image_latent.device,
-                dtype=image_latent.dtype,
-            )  # [N*E,4,h,w]
-
+        pred_latent = image_latent * 0.3 + torch.randn_like(image_latent) * 0.7
         return image_latent, pred_latent
 
     def decode_prediction(self, pred_latent: torch.Tensor) -> torch.Tensor:
@@ -620,108 +576,3 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         normals /= norm.clamp(min=eps)
 
         return normals
-
-    @staticmethod
-    def ensemble_normals(
-        normals: torch.Tensor, output_uncertainty: bool, reduction: str = "closest"
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        """
-        Ensembles the normals maps represented by the `normals` tensor with expected shape `(B, 3, H, W)`, where B is
-        the number of ensemble members for a given prediction of size `(H x W)`.
-
-        Args:
-            normals (`torch.Tensor`):
-                Input ensemble normals maps.
-            output_uncertainty (`bool`, *optional*, defaults to `False`):
-                Whether to output uncertainty map.
-            reduction (`str`, *optional*, defaults to `"closest"`):
-                Reduction method used to ensemble aligned predictions. The accepted values are: `"closest"` and
-                `"mean"`.
-
-        Returns:
-            A tensor of aligned and ensembled normals maps with shape `(1, 3, H, W)` and optionally a tensor of
-            uncertainties of shape `(1, 1, H, W)`.
-        """
-        if normals.dim() != 4 or normals.shape[1] != 3:
-            raise ValueError(f"Expecting 4D tensor of shape [B,3,H,W]; got {normals.shape}.")
-        if reduction not in ("closest", "mean"):
-            raise ValueError(f"Unrecognized reduction method: {reduction}.")
-
-        mean_normals = normals.mean(dim=0, keepdim=True)  # [1,3,H,W]
-        mean_normals = MarigoldNormalsPipeline.normalize_normals(mean_normals)  # [1,3,H,W]
-
-        sim_cos = (mean_normals * normals).sum(dim=1, keepdim=True)  # [E,1,H,W]
-        sim_cos = sim_cos.clamp(-1, 1)  # required to avoid NaN in uncertainty with fp16
-
-        uncertainty = None
-        if output_uncertainty:
-            uncertainty = sim_cos.arccos()  # [E,1,H,W]
-            uncertainty = uncertainty.mean(dim=0, keepdim=True) / np.pi  # [1,1,H,W]
-
-        if reduction == "mean":
-            return mean_normals, uncertainty  # [1,3,H,W], [1,1,H,W]
-
-        closest_indices = sim_cos.argmax(dim=0, keepdim=True)  # [1,1,H,W]
-        closest_indices = closest_indices.repeat(1, 3, 1, 1)  # [1,3,H,W]
-        closest_normals = torch.gather(normals, 0, closest_indices)  # [1,3,H,W]
-
-        return closest_normals, uncertainty  # [1,3,H,W], [1,1,H,W]
-
-# Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.retrieve_timesteps
-def retrieve_timesteps(
-    scheduler,
-    num_inference_steps: Optional[int] = None,
-    device: Optional[Union[str, torch.device]] = None,
-    timesteps: Optional[List[int]] = None,
-    sigmas: Optional[List[float]] = None,
-    **kwargs,
-):
-    """
-    Calls the scheduler's `set_timesteps` method and retrieves timesteps from the scheduler after the call. Handles
-    custom timesteps. Any kwargs will be supplied to `scheduler.set_timesteps`.
-
-    Args:
-        scheduler (`SchedulerMixin`):
-            The scheduler to get timesteps from.
-        num_inference_steps (`int`):
-            The number of diffusion steps used when generating samples with a pre-trained model. If used, `timesteps`
-            must be `None`.
-        device (`str` or `torch.device`, *optional*):
-            The device to which the timesteps should be moved to. If `None`, the timesteps are not moved.
-        timesteps (`List[int]`, *optional*):
-            Custom timesteps used to override the timestep spacing strategy of the scheduler. If `timesteps` is passed,
-            `num_inference_steps` and `sigmas` must be `None`.
-        sigmas (`List[float]`, *optional*):
-            Custom sigmas used to override the timestep spacing strategy of the scheduler. If `sigmas` is passed,
-            `num_inference_steps` and `timesteps` must be `None`.
-
-    Returns:
-        `Tuple[torch.Tensor, int]`: A tuple where the first element is the timestep schedule from the scheduler and the
-        second element is the number of inference steps.
-    """
-    if timesteps is not None and sigmas is not None:
-        raise ValueError("Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values")
-    if timesteps is not None:
-        accepts_timesteps = "timesteps" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
-        if not accepts_timesteps:
-            raise ValueError(
-                f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
-                f" timestep schedules. Please check whether you are using the correct scheduler."
-            )
-        scheduler.set_timesteps(timesteps=timesteps, device=device, **kwargs)
-        timesteps = scheduler.timesteps
-        num_inference_steps = len(timesteps)
-    elif sigmas is not None:
-        accept_sigmas = "sigmas" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
-        if not accept_sigmas:
-            raise ValueError(
-                f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
-                f" sigmas schedules. Please check whether you are using the correct scheduler."
-            )
-        scheduler.set_timesteps(sigmas=sigmas, device=device, **kwargs)
-        timesteps = scheduler.timesteps
-        num_inference_steps = len(timesteps)
-    else:
-        scheduler.set_timesteps(num_inference_steps, device=device, **kwargs)
-        timesteps = scheduler.timesteps
-    return timesteps, num_inference_steps
