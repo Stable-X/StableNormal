@@ -110,11 +110,6 @@ class Predictor:
     def __init__(self, model):
         self.model = model
         self.segmentation_handler = SegmentationHandler()
-        try:
-            import xformers
-            self.model.enable_xformers_memory_efficient_attention()
-        except ImportError:
-            pass
 
     def to(self, device: str = "cuda", dtype: torch.dtype = torch.float16):
         self.model.to(device, dtype)
