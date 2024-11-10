@@ -242,7 +242,7 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         feature_extractor: CLIPImageProcessor,
         image_encoder: CLIPVisionModelWithProjection = None,
         requires_safety_checker: bool = True,
-        default_denoising_steps: Optional[int] = 10,
+        default_denoising_steps: Optional[int] = 2,
         default_processing_resolution: Optional[int] = 768,
         prompt="The normal map",
         empty_text_embedding=None,
@@ -278,7 +278,6 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         self,
         image: PipelineImageInput,
         num_inference_steps: int,
-        ensemble_size: int,
         processing_resolution: int,
         resample_method_input: str,
         resample_method_output: str,
@@ -287,24 +286,11 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         latents: Optional[torch.Tensor],
         generator: Optional[Union[torch.Generator, List[torch.Generator]]],
         output_type: str,
-        output_uncertainty: bool,
     ) -> int:
         if num_inference_steps is None:
             raise ValueError("`num_inference_steps` is not specified and could not be resolved from the model config.")
         if num_inference_steps < 1:
             raise ValueError("`num_inference_steps` must be positive.")
-        if ensemble_size < 1:
-            raise ValueError("`ensemble_size` must be positive.")
-        if ensemble_size == 2:
-            logger.warning(
-                "`ensemble_size` == 2 results are similar to no ensembling (1); "
-                "consider increasing the value to at least 3."
-            )
-        if ensemble_size == 1 and output_uncertainty:
-            raise ValueError(
-                "Computing uncertainty by setting `output_uncertainty=True` also requires setting `ensemble_size` "
-                "greater than 1."
-            )
         if processing_resolution is None:
             raise ValueError(
                 "`processing_resolution` is not specified and could not be resolved from the model config."
@@ -380,7 +366,7 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
                 W, H = new_W, new_H
             w = (W + self.vae_scale_factor - 1) // self.vae_scale_factor
             h = (H + self.vae_scale_factor - 1) // self.vae_scale_factor
-            shape_expected = (num_images * ensemble_size, self.vae.config.latent_channels, h, w)
+            shape_expected = (num_images, self.vae.config.latent_channels, h, w)
 
             if latents.shape != shape_expected:
                 raise ValueError(f"`latents` has unexpected shape={latents.shape} expected={shape_expected}.")
@@ -388,7 +374,7 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         # generator checks
         if generator is not None:
             if isinstance(generator, list):
-                if len(generator) != num_images * ensemble_size:
+                if len(generator) != num_images:
                     raise ValueError(
                         "The number of generators must match the total number of ensemble members for all input images."
                     )
@@ -425,7 +411,6 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         prompt: Union[str, List[str]] = None,
         negative_prompt: Optional[Union[str, List[str]]] = None,
         num_inference_steps: Optional[int] = None,
-        ensemble_size: int = 1,
         processing_resolution: Optional[int] = None,
         match_input_resolution: bool = True,
         resample_method_input: str = "bilinear",
@@ -439,7 +424,6 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
         controlnet_conditioning_scale: Union[float, List[float]] = 1.0,
         output_type: str = "np",
-        output_uncertainty: bool = False,
         output_latent: bool = False,
         return_dict: bool = True,
     ):
@@ -457,9 +441,6 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
                 Number of denoising diffusion steps during inference. The default value `None` results in automatic
                 selection. The number of steps should be at least 10 with the full Marigold models, and between 1 and 4
                 for Marigold-LCM models.
-            ensemble_size (`int`, defaults to `1`):
-                Number of ensemble predictions. Recommended values are 5 and higher for better precision, or 1 for
-                faster inference.
             processing_resolution (`int`, *optional*, defaults to `None`):
                 Effective processing resolution. When set to `0`, matches the larger input image dimension. This
                 produces crisper predictions, but may also lead to the overall loss of global context. The default
@@ -474,7 +455,7 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
                 Resampling method used to resize output predictions to match the input resolution. The accepted values
                 are `"nearest"`, `"nearest-exact"`, `"bilinear"`, `"bicubic"`, or `"area"`.
             batch_size (`int`, *optional*, defaults to `1`):
-                Batch size; only matters when setting `ensemble_size` or passing a tensor of images.
+                Batch size;
             ensembling_kwargs (`dict`, *optional*, defaults to `None`)
                 Extra dictionary with arguments for precise ensembling control. The following options are available:
                 - reduction (`str`, *optional*, defaults to `"closest"`): Defines the ensembling function applied in
@@ -487,9 +468,6 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
             output_type (`str`, *optional*, defaults to `"np"`):
                 Preferred format of the output's `prediction` and the optional `uncertainty` fields. The accepted
                 values are: `"np"` (numpy array) or `"pt"` (torch tensor).
-            output_uncertainty (`bool`, *optional*, defaults to `False`):
-                When enabled, the output's `uncertainty` field contains the predictive uncertainty map, provided that
-                the `ensemble_size` argument is set to a value above 2.
             output_latent (`bool`, *optional*, defaults to `False`):
                 When enabled, the output's `latent` field contains the latent codes corresponding to the predictions
                 within the ensemble. These codes can be saved, modified, and used for subsequent calls with the
@@ -522,19 +500,19 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         )  # [N,3,PPH,PPW]
 
         image_latent, gaus_noise = self.prepare_latents(
-            image, latents, generator, ensemble_size, batch_size
+            image, latents, generator, batch_size
         )  # [N,4,h,w], [N,4,h,w]
 
         # 0. X_start latent obtain
         predictor = self.x_start_pipeline(image, latents=gaus_noise, 
                                           processing_resolution=processing_resolution, skip_preprocess=True)
         x_start_latent = predictor.latent
+        gaus_noise = predictor.gaus_noise
 
         # 1. Check inputs.
         num_images = self.check_inputs(
             image,
             num_inference_steps,
-            ensemble_size,
             processing_resolution,
             resample_method_input,
             resample_method_output,
@@ -543,7 +521,6 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
             latents,
             generator,
             output_type,
-            output_uncertainty,
         )
 
 
@@ -592,17 +569,11 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         )
 
         # 7. denoise sampling, using heuritic sampling proposed by Ye.
-
-        t_start = self.x_start_pipeline.t_start
-        self.scheduler.set_timesteps(num_inference_steps,device=device)
+        self.scheduler.set_timesteps(10,device=device)
 
         cond_scale =controlnet_conditioning_scale
-        if t_start == 0:
-            pred_latent = self.scheduler.add_noise(x_start_latent, gaus_noise, self.scheduler.timesteps[0])
-        else:
-            pred_latent = x_start_latent
-
         cur_step = 0
+        nosiy_latent = self.scheduler.add_noise(x_start_latent, gaus_noise, self.scheduler.timesteps[cur_step])
 
         # dino controlnet
         dino_down_block_res_samples, dino_mid_block_res_sample = self.dino_controlnet(
@@ -615,44 +586,34 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         )
         assert dino_mid_block_res_sample == None
 
+        # controlnet
+        down_block_res_samples, mid_block_res_sample = self.controlnet(
+            image_latent.detach(),
+            self.scheduler.timesteps[cur_step],
+            encoder_hidden_states=self.prompt_embeds,
+            conditioning_scale=cond_scale,
+            guess_mode=False,
+            return_dict=False,
+        )
+
         pred_latents = []
-
-        last_pred_latent = pred_latent
-
-        for (t, prev_t) in self.progress_bar(zip(self.scheduler.timesteps,self.scheduler.prev_timesteps), leave=False, desc="Diffusion steps..."):
-
-            _dino_down_block_res_samples = [dino_down_block_res_sample for dino_down_block_res_sample in dino_down_block_res_samples]  # copy, avoid repeat quiery
-
-            # controlnet
-            down_block_res_samples, mid_block_res_sample = self.controlnet(
-                image_latent.detach(),
-                t,
-                encoder_hidden_states=self.prompt_embeds,
-                conditioning_scale=cond_scale,
-                guess_mode=False,
-                return_dict=False,
-            )
-
+        for _ in range(num_inference_steps):
+            _dino_down_block_res_samples = [dino_down_block_res_sample for dino_down_block_res_sample in dino_down_block_res_samples]
             # SG-DRN
-            noise = self.dino_unet_forward(
+            pred_latent = self.dino_unet_forward(
                 self.unet,
-                pred_latent,
-                t,
+                nosiy_latent,
+                self.scheduler.timesteps[cur_step],
                 encoder_hidden_states=self.prompt_embeds,
                 down_block_additional_residuals=down_block_res_samples,
                 mid_block_additional_residual=mid_block_res_sample,
-                dino_down_block_additional_residuals= _dino_down_block_res_samples,
+                dino_down_block_additional_residuals=_dino_down_block_res_samples,
                 return_dict=False,
             )[0]  # [B,4,h,w]
 
-            pred_latents.append(noise)
-            # ddim steps
-            out = self.scheduler.step(
-                noise, t, prev_t, pred_latent, gaus_noise = gaus_noise, generator=generator, cur_step=cur_step+1  # NOTE that cur_step dirs to next_step
-            )# [B,4,h,w]
-            pred_latent = out.prev_sample
-
-            cur_step += 1
+            nosiy_latent = self.scheduler.add_noise(pred_latent, gaus_noise, 
+                                                    self.scheduler.timesteps[cur_step])
+            pred_latents.append(pred_latent)
 
         del (
             image_latent,
@@ -695,7 +656,6 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
         image: torch.Tensor,
         latents: Optional[torch.Tensor],
         generator: Optional[torch.Generator],
-        ensemble_size: int,
         batch_size: int,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         def retrieve_latents(encoder_output):
@@ -716,7 +676,6 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
             dim=0,
         )  # [N,4,h,w]
         image_latent = image_latent * self.vae.config.scaling_factor
-        image_latent = image_latent.repeat_interleave(ensemble_size, dim=0)  # [N*E,4,h,w]
 
         pred_latent = latents
         if pred_latent is None:
@@ -760,15 +719,6 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
             return dino
         else:
             return F.interpolate(dino, (h, w), mode='bilinear')
-
-
-
-
-
-
-
-
-
 
     @staticmethod
     def dino_unet_forward(
@@ -1174,110 +1124,3 @@ class StableNormalPipeline(StableDiffusionControlNetPipeline):
             return (sample,)
 
         return UNet2DConditionOutput(sample=sample)
-
-
-
-    @staticmethod
-    def ensemble_normals(
-        normals: torch.Tensor, output_uncertainty: bool, reduction: str = "closest"
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        """
-        Ensembles the normals maps represented by the `normals` tensor with expected shape `(B, 3, H, W)`, where B is
-        the number of ensemble members for a given prediction of size `(H x W)`.
-
-        Args:
-            normals (`torch.Tensor`):
-                Input ensemble normals maps.
-            output_uncertainty (`bool`, *optional*, defaults to `False`):
-                Whether to output uncertainty map.
-            reduction (`str`, *optional*, defaults to `"closest"`):
-                Reduction method used to ensemble aligned predictions. The accepted values are: `"closest"` and
-                `"mean"`.
-
-        Returns:
-            A tensor of aligned and ensembled normals maps with shape `(1, 3, H, W)` and optionally a tensor of
-            uncertainties of shape `(1, 1, H, W)`.
-        """
-        if normals.dim() != 4 or normals.shape[1] != 3:
-            raise ValueError(f"Expecting 4D tensor of shape [B,3,H,W]; got {normals.shape}.")
-        if reduction not in ("closest", "mean"):
-            raise ValueError(f"Unrecognized reduction method: {reduction}.")
-
-        mean_normals = normals.mean(dim=0, keepdim=True)  # [1,3,H,W]
-        mean_normals = MarigoldNormalsPipeline.normalize_normals(mean_normals)  # [1,3,H,W]
-
-        sim_cos = (mean_normals * normals).sum(dim=1, keepdim=True)  # [E,1,H,W]
-        sim_cos = sim_cos.clamp(-1, 1)  # required to avoid NaN in uncertainty with fp16
-
-        uncertainty = None
-        if output_uncertainty:
-            uncertainty = sim_cos.arccos()  # [E,1,H,W]
-            uncertainty = uncertainty.mean(dim=0, keepdim=True) / np.pi  # [1,1,H,W]
-
-        if reduction == "mean":
-            return mean_normals, uncertainty  # [1,3,H,W], [1,1,H,W]
-
-        closest_indices = sim_cos.argmax(dim=0, keepdim=True)  # [1,1,H,W]
-        closest_indices = closest_indices.repeat(1, 3, 1, 1)  # [1,3,H,W]
-        closest_normals = torch.gather(normals, 0, closest_indices)  # [1,3,H,W]
-
-        return closest_normals, uncertainty  # [1,3,H,W], [1,1,H,W]
-
-# Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.retrieve_timesteps
-def retrieve_timesteps(
-    scheduler,
-    num_inference_steps: Optional[int] = None,
-    device: Optional[Union[str, torch.device]] = None,
-    timesteps: Optional[List[int]] = None,
-    sigmas: Optional[List[float]] = None,
-    **kwargs,
-):
-    """
-    Calls the scheduler's `set_timesteps` method and retrieves timesteps from the scheduler after the call. Handles
-    custom timesteps. Any kwargs will be supplied to `scheduler.set_timesteps`.
-
-    Args:
-        scheduler (`SchedulerMixin`):
-            The scheduler to get timesteps from.
-        num_inference_steps (`int`):
-            The number of diffusion steps used when generating samples with a pre-trained model. If used, `timesteps`
-            must be `None`.
-        device (`str` or `torch.device`, *optional*):
-            The device to which the timesteps should be moved to. If `None`, the timesteps are not moved.
-        timesteps (`List[int]`, *optional*):
-            Custom timesteps used to override the timestep spacing strategy of the scheduler. If `timesteps` is passed,
-            `num_inference_steps` and `sigmas` must be `None`.
-        sigmas (`List[float]`, *optional*):
-            Custom sigmas used to override the timestep spacing strategy of the scheduler. If `sigmas` is passed,
-            `num_inference_steps` and `timesteps` must be `None`.
-
-    Returns:
-        `Tuple[torch.Tensor, int]`: A tuple where the first element is the timestep schedule from the scheduler and the
-        second element is the number of inference steps.
-    """
-    if timesteps is not None and sigmas is not None:
-        raise ValueError("Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values")
-    if timesteps is not None:
-        accepts_timesteps = "timesteps" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
-        if not accepts_timesteps:
-            raise ValueError(
-                f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
-                f" timestep schedules. Please check whether you are using the correct scheduler."
-            )
-        scheduler.set_timesteps(timesteps=timesteps, device=device, **kwargs)
-        timesteps = scheduler.timesteps
-        num_inference_steps = len(timesteps)
-    elif sigmas is not None:
-        accept_sigmas = "sigmas" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
-        if not accept_sigmas:
-            raise ValueError(
-                f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
-                f" sigmas schedules. Please check whether you are using the correct scheduler."
-            )
-        scheduler.set_timesteps(sigmas=sigmas, device=device, **kwargs)
-        timesteps = scheduler.timesteps
-        num_inference_steps = len(timesteps)
-    else:
-        scheduler.set_timesteps(num_inference_steps, device=device, **kwargs)
-        timesteps = scheduler.timesteps
-    return timesteps, num_inference_steps

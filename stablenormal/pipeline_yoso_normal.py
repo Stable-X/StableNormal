@@ -154,7 +154,7 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         tokenizer: CLIPTokenizer = None,
         feature_extractor: CLIPImageProcessor = None,
         image_encoder: CLIPVisionModelWithProjection = None,
-        requires_safety_checker: bool = True,
+        requires_safety_checker: bool = False,
         default_denoising_steps: Optional[int] = 1,
 		default_processing_resolution: Optional[int] = 768,
         prompt="",
@@ -470,11 +470,10 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         # noise. This behavior can be achieved by setting the `output_latent` argument to `True`. The latent space
         # dimensions are `(h, w)`. Encoding into latent space happens in batches of size `batch_size`.
         # Model invocation: self.vae.encoder.
-        image_latent, pred_latent = self.prepare_latents(
+        image_latent, pred_latent, gaus_noise = self.prepare_latents(
             image, latents, generator, ensemble_size, batch_size
         )  # [N*E,4,h,w], [N*E,4,h,w]
 
-        gaus_noise = pred_latent.detach().clone()
         del image
 
         # 6. obtain control_output
@@ -552,8 +551,9 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         )  # [N,4,h,w]
         image_latent = image_latent * self.vae.config.scaling_factor
         image_latent = image_latent.repeat_interleave(ensemble_size, dim=0)  # [N*E,4,h,w]
-        pred_latent = image_latent * 0.3 + torch.randn_like(image_latent) * 0.7
-        return image_latent, pred_latent
+        gaus_noise = torch.randn_like(image_latent) 
+        pred_latent = image_latent * 0.3 + gaus_noise * 0.7
+        return image_latent, pred_latent, gaus_noise
 
     def decode_prediction(self, pred_latent: torch.Tensor) -> torch.Tensor:
         if pred_latent.dim() != 4 or pred_latent.shape[1] != self.vae.config.latent_channels:
