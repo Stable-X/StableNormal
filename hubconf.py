@@ -110,7 +110,7 @@ class Predictor:
         return f"Predictor(model={self.model})"
 
 def StableNormal(local_cache_dir: Optional[str] = None, device="cuda:0", 
-                 yoso_version='yoso-normal-v1-0', diffusion_version='stable-normal-v0-1') -> Predictor:
+                 yoso_version='yoso-normal-v0-3', diffusion_version='stable-normal-v0-1') -> Predictor:
     """Load the StableNormal pipeline and return a Predictor instance."""
     yoso_weight_path = os.path.join(local_cache_dir if local_cache_dir else "Stable-X", yoso_version)
     diffusion_weight_path = os.path.join(local_cache_dir if local_cache_dir else "Stable-X", diffusion_version)
