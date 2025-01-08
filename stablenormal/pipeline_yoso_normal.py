@@ -552,7 +552,7 @@ class YOSONormalsPipeline(StableDiffusionControlNetPipeline):
         image_latent = image_latent * self.vae.config.scaling_factor
         image_latent = image_latent.repeat_interleave(ensemble_size, dim=0)  # [N*E,4,h,w]
         gaus_noise = torch.randn_like(image_latent) 
-        pred_latent = image_latent * 0.3 + gaus_noise * 0.7
+        pred_latent = image_latent
         return image_latent, pred_latent, gaus_noise
 
     def decode_prediction(self, pred_latent: torch.Tensor) -> torch.Tensor:
