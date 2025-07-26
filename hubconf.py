@@ -174,12 +174,13 @@ class Predictor:
             data_type = DataType(data_type.lower())
         
         if self.yoso_version:
-            version_str = self.yoso_version.split('-')[-1] 
-            version_num = float(version_str[1:].replace('-', '.')) 
+            version_str = self.yoso_version.split("-v")[-1].split("-")[:2]  
+            version_num = float(".".join(version_str))
             if version_num > 1.5 and data_type != DataType.OBJECT:
                 import warnings
                 warnings.warn(
-                    f"Current version ({self.yoso_version}) is not optimized for scene normal estimation. "
+                    f"Your current DataType is set to {data_type}. "
+                    f"Current version (v{version_num}) is not optimized for scene normal estimation. "
                     "For better results with indoor/outdoor scenes, please use version v1.5 or earlier.",
                     UserWarning
                 )
@@ -236,12 +237,15 @@ class Predictor:
         return self.model.image_processor.visualize_normals(prediction)[-1]
 
 def StableNormal(local_cache_dir: Optional[str] = None, device="cuda:0", 
-                 yoso_version='yoso-normal-v1-5', diffusion_version='stable-normal-v0-1') -> Predictor:
+                 yoso_version='yoso-normal-v0-3', diffusion_version='stable-normal-v0-1') -> Predictor:
     """Load the StableNormal pipeline and return a Predictor instance."""
     
-    version_str = yoso_version.split('-')[-1] 
-    version_num = float(version_str[1:].replace('-', '.'))  
-    
+    # version_str = yoso_version.split('-v')[-1] 
+    version_str = yoso_version.split("-v")[-1].split("-")[:2]
+    # print(f"Loading StableNormal with YOSO version: {version_str}")
+    # version_num = float(version_str[1:].replace('-', '.'))  
+    version_num = float(".".join(version_str))
+
     if version_num < 1.5:
         from stablenormal.pipeline_yoso_normal import YOSONormalsPipeline
         from stablenormal.pipeline_stablenormal import StableNormalPipeline
@@ -286,7 +290,7 @@ def StableNormal(local_cache_dir: Optional[str] = None, device="cuda:0",
     return Predictor(pipe, yoso_version=yoso_version)
 
 def StableNormal_turbo(local_cache_dir: Optional[str] = None, device="cuda:0", 
-                      yoso_version='yoso-normal-v1-5') -> Predictor:
+                      yoso_version='yoso-normal-v0-3') -> Predictor:
     """Load the StableNormal_turbo pipeline for a faster inference."""
     
     version_str = yoso_version.split('-')[-1] 
