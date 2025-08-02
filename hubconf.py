@@ -236,16 +236,22 @@ class Predictor:
         prediction = np.expand_dims(prediction, axis=0)
         return self.model.image_processor.visualize_normals(prediction)[-1]
 
+def parse_version(version_string: str) -> Tuple[int, int, int]:
+    import re
+    version_match = re.search(r'v-?(\d+(?:-\d+)*?)(?:-(?:base|alpha|beta|rc\d*)?)?$', version_string)
+    version_part = version_match.group(1)
+    parts = version_part.split('-')
+    major = int(parts[0]) if len(parts) > 0 else 0
+    minor = int(parts[1]) if len(parts) > 1 else 0
+    patch = int(parts[2]) if len(parts) > 2 else 0
+    return major + minor * 0.1 + patch * 0.01
+
 def StableNormal(local_cache_dir: Optional[str] = None, device="cuda:0", 
                  yoso_version='yoso-normal-v0-3', diffusion_version='stable-normal-v0-1') -> Predictor:
     """Load the StableNormal pipeline and return a Predictor instance."""
     
-    # version_str = yoso_version.split('-v')[-1] 
-    version_str = yoso_version.split("-v")[-1].split("-")[:2]
-    # print(f"Loading StableNormal with YOSO version: {version_str}")
-    # version_num = float(version_str[1:].replace('-', '.'))  
-    version_num = float(".".join(version_str))
-
+    version_num = parse_version(yoso_version)
+    
     if version_num < 1.5:
         from stablenormal.pipeline_yoso_normal import YOSONormalsPipeline
         from stablenormal.pipeline_stablenormal import StableNormalPipeline
@@ -293,8 +299,7 @@ def StableNormal_turbo(local_cache_dir: Optional[str] = None, device="cuda:0",
                       yoso_version='yoso-normal-v0-3') -> Predictor:
     """Load the StableNormal_turbo pipeline for a faster inference."""
     
-    version_str = yoso_version.split('-')[-1] 
-    version_num = float(version_str[1:].replace('-', '.')) 
+    version_num = parse_version(yoso_version)
     
     if version_num < 1.5:
         from stablenormal.pipeline_yoso_normal import YOSONormalsPipeline
